@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>点字ドットスキャナー / prototype v0.9</title>
+<title>点字ドットスキャナー / prototype v0.10</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -93,7 +93,7 @@
 <header>
   <div class="brand-row">
     <span class="brand">点字ドットスキャナー</span>
-    <span class="brand-sub">BRAILLE READER / prototype v0.9</span>
+    <span class="brand-sub">BRAILLE READER / prototype v0.10</span>
   </div>
   <div class="status-line" id="statusLine">写真を撮って、または選んで解析します</div>
 </header>
@@ -174,6 +174,7 @@
   </div>
 
   <div class="notes">
+    <b>v0.10の変更点：</b>点訳原稿の紙全体を撮った写真で試して直しました。紙が少し反っていて行ごとに傾きが違っても、行ごとに傾きを測り直して読みます。二重大文字符（単語全体が大文字）と第1カッコに対応しました。<br><br>
     <b>v0.9の変更点：</b>手すりや案内板の写真で試して直しました。数符の点が一部欠けても、続くマスが数字の形なら数字として読みます。行の端にある、ほかより明らかに弱い1点（傷や汚れ）を除きます。点字のすぐ上に印刷文字の一部があっても、点字の行が分かれないようにしました。点の多い行は、その行だけでマスの幅を決めます。<br><br>
     <b>v0.8：</b>黒い案内板のように点字が光って写る写真に対応し、暗い点・明るい点、紙の範囲を使うかどうかを自動で選ぶようにしました。<br><br>
     <b>試作版です：</b>読み取りはまだ間違えることがあります。点訳の最終確認には使わないでください。読み間違いを見つけたら、写真と正しい読みを教えてもらえると改良に役立ちます。写真はスマホの中だけで処理し、どこにも送信しません。<br><br>
@@ -773,65 +774,95 @@ function groupCells(dots, imgW, onBorder) {
     return smooth[smooth.length - 1].a;
   }
   const xc = median(dots.map(p => p.x));
-  const pts = dots.map((p, i) => {
-    const t = Math.tan(angleAt(p.y));
-    return { p, u: p.x + t * p.y, v: p.y - t * (p.x - xc), d: lp[i] };
-  });
-
-  // vertical dot spacing can differ from horizontal in slanted photos: measure it
-  // from dots that sit in the same column, locally
-  const vg = pts.map(q => {
-    let best = Infinity;
-    for (const o of pts) {
-      if (o === q) continue;
-      const du = Math.abs(o.u - q.u), dv = Math.abs(o.v - q.v);
-      if (du < q.d * 0.35 && dv > q.d * 0.45 && dv < best) best = dv;
-    }
-    return best;
-  });
-  pts.forEach((q, i) => {
-    const near = pts.map((o, j) => [Math.hypot(o.u - q.u, o.v - q.v), j]).sort((a, b) => a[0] - b[0]).slice(0, 13);
-    const gaps = near.map(e => vg[e[1]]).filter(g => isFinite(g) && g < q.d * 2.6);
-    q.dv = gaps.length >= 3 ? median(gaps) : q.d;
-  });
-
-  // 1) dot rows: neighbours in v closer than half the local spacing
-  pts.sort((a, b) => a.v - b.v);
-  const rows = [];
-  let curRow = [];
-  for (const q of pts) {
-    if (curRow.length) {
-      const last = curRow[curRow.length - 1];
-      if (q.v - last.v > Math.min(q.dv, last.dv) * 0.5) { rows.push(curRow); curRow = []; }
-    }
-    curRow.push(q);
+  // place every dot in line coordinates: u along the line, v across it
+  function place(angleOf) {
+    const pts = dots.map((p, i) => {
+      const t = Math.tan(angleOf(i));
+      return { p, u: p.x + t * p.y, v: p.y - t * (p.x - xc), d: lp[i] };
+    });
+    // vertical dot spacing can differ from horizontal in slanted photos: measure it
+    // from dots that sit in the same column, locally
+    const vg = pts.map(q => {
+      let best = Infinity;
+      for (const o of pts) {
+        if (o === q) continue;
+        const du = Math.abs(o.u - q.u), dv = Math.abs(o.v - q.v);
+        if (du < q.d * 0.35 && dv > q.d * 0.45 && dv < best) best = dv;
+      }
+      return best;
+    });
+    pts.forEach((q, i) => {
+      const near = pts.map((o, j) => [Math.hypot(o.u - q.u, o.v - q.v), j]).sort((a, b) => a[0] - b[0]).slice(0, 13);
+      const gaps = near.map(e => vg[e[1]]).filter(g => isFinite(g) && g < q.d * 2.6);
+      q.dv = gaps.length >= 3 ? median(gaps) : q.d;
+    });
+    return pts;
   }
-  if (curRow.length) rows.push(curRow);
-  const rowObjs = rows.map(r => ({ v: median(r.map(q => q.v)), d: median(r.map(q => q.d)), dv: median(r.map(q => q.dv)), pts: r }));
-
-  // 2) braille lines: up to 3 consecutive dot rows about one spacing apart
-  const lines = [];
-  let cur = null;
-  for (const r of rowObjs) {
-    const dv = cur ? Math.min(cur.dv, r.dv) : r.dv;
-    // rows of one braille line are one or two dot spacings apart, never in between
-    const gap = cur ? (r.v - cur.rows[cur.rows.length - 1].v) / dv : 0;
-    // (a very small gap is the same row split by a slight tilt, so it belongs to the line too)
-    const gapOk = gap <= 1.32 || (gap >= 1.72 && gap <= 2.3);
-    // If this row is close below but the line would get too tall, and the line's top row is
-    // only a stray mark or two (e.g. a printed letter's tail just above the braille), drop
-    // that top row from the line instead of cutting the braille line apart.
-    while (cur && gapOk && r.v - cur.top > dv * 2.45 && cur.rows.length > 1 &&
-           cur.rows[0].pts.length <= 2 && cur.rows[0].pts.length * 3 <= r.pts.length) {
-      const stray = cur.rows.shift();
-      lines.splice(lines.indexOf(cur), 0, { top: stray.v, rows: [stray], d: stray.d, dv: stray.dv });
-      cur.top = cur.rows[0].v;
+  function buildLines(pts) {
+    // 1) dot rows: neighbours in v closer than half the local spacing
+    pts.sort((a, b) => a.v - b.v);
+    const rows = [];
+    let curRow = [];
+    for (const q of pts) {
+      if (curRow.length) {
+        const last = curRow[curRow.length - 1];
+        if (q.v - last.v > Math.min(q.dv, last.dv) * 0.5) { rows.push(curRow); curRow = []; }
+      }
+      curRow.push(q);
     }
-    if (cur && r.v - cur.top <= dv * 2.45 && gapOk) {
-      cur.rows.push(r);
-      cur.d = median(cur.rows.flatMap(x => x.pts.map(q => q.d)));
-      cur.dv = median(cur.rows.flatMap(x => x.pts.map(q => q.dv)));
-    } else { cur = { top: r.v, rows: [r], d: r.d, dv: r.dv }; lines.push(cur); }
+    if (curRow.length) rows.push(curRow);
+    const rowObjs = rows.map(r => ({ v: median(r.map(q => q.v)), d: median(r.map(q => q.d)), dv: median(r.map(q => q.dv)), pts: r }));
+
+    // 2) braille lines: up to 3 consecutive dot rows about one spacing apart
+    const lines = [];
+    let cur = null;
+    for (const r of rowObjs) {
+      const dv = cur ? Math.min(cur.dv, r.dv) : r.dv;
+      // rows of one braille line are one or two dot spacings apart, never in between
+      const gap = cur ? (r.v - cur.rows[cur.rows.length - 1].v) / dv : 0;
+      // (a very small gap is the same row split by a slight tilt, so it belongs to the line too)
+      const gapOk = gap <= 1.32 || (gap >= 1.72 && gap <= 2.3);
+      // If this row is close below but the line would get too tall, and the line's top row is
+      // only a stray mark or two (e.g. a printed letter's tail just above the braille), drop
+      // that top row from the line instead of cutting the braille line apart.
+      while (cur && gapOk && r.v - cur.top > dv * 2.45 && cur.rows.length > 1 &&
+             cur.rows[0].pts.length <= 2 && cur.rows[0].pts.length * 3 <= r.pts.length) {
+        const stray = cur.rows.shift();
+        lines.splice(lines.indexOf(cur), 0, { top: stray.v, rows: [stray], d: stray.d, dv: stray.dv });
+        cur.top = cur.rows[0].v;
+      }
+      if (cur && r.v - cur.top <= dv * 2.45 && gapOk) {
+        cur.rows.push(r);
+        cur.d = median(cur.rows.flatMap(x => x.pts.map(q => q.d)));
+        cur.dv = median(cur.rows.flatMap(x => x.pts.map(q => q.dv)));
+      } else { cur = { top: r.v, rows: [r], d: r.d, dv: r.dv }; lines.push(cur); }
+    }
+    return lines;
+  }
+  let pts = place(i => angleAt(dots[i].y));
+  let lines = buildLines(pts);
+  // A sheet that is not lying flat (curled near the edge) can tilt one braille line
+  // differently from the next, while the band angle above mixes neighbouring lines.
+  // So measure each line's own tilt from its dots and place the dots again.
+  {
+    const own = new Map();
+    const ranges = lines.map(L => {
+      const vs = L.rows.flatMap(r => r.pts.map(q => q.v));
+      return { lo: Math.min(...vs) - L.dv, hi: Math.max(...vs) + L.dv, L };
+    });
+    const idxOf = new Map(dots.map((p, i) => [p, i]));
+    for (const R of ranges) {
+      const mem = pts.filter(q => q.v >= R.lo && q.v <= R.hi);
+      if (mem.length < 10) continue;
+      const a0 = median(mem.map(q => angleAt(q.p.y)));
+      const a = estimateAngle(mem.map(q => q.p), median(mem.map(q => q.d)));
+      if (Math.abs(a - a0) > 6 * Math.PI / 180) continue;
+      for (const q of mem) if (!own.has(idxOf.get(q.p))) own.set(idxOf.get(q.p), a);
+    }
+    if (own.size) {
+      pts = place(i => own.has(i) ? own.get(i) : angleAt(dots[i].y));
+      lines = buildLines(pts);
+    }
   }
 
   // 3) columns per line. In a slanted photo the columns are not always at a right angle
@@ -1050,12 +1081,12 @@ const YOON_VOWEL = { 'か':'ゃ','さ':'ゃ','た':'ゃ','な':'ゃ','は':'ゃ'
 const M = { SPACE: 0, DAKU: dotsToMask('5'), HANDAKU: dotsToMask('6'), YOON: dotsToMask('4'),
   YOON_DAKU: dotsToMask('45'), YOON_HANDAKU: dotsToMask('46'), NUM: dotsToMask('3456'),
   TSUNAGI: dotsToMask('36'), GAIJI: dotsToMask('56'), QUOTE_OPEN: dotsToMask('236'), QUOTE_CLOSE: dotsToMask('356'),
-  CAPITAL: dotsToMask('6') };
+  CAPITAL: dotsToMask('6'), PAREN: dotsToMask('2356') };
 
 // Rough reading of one braille line (a list of masks). Unknown cells become ◇.
 function readLine(masks) {
   let out = '';
-  let i = 0;
+  let i = 0, parenOpen = false;
   const n = masks.length;
   function letterAt(m, cap) { const l = LETTERS.get(m); return l ? (cap ? l.toUpperCase() : l) : null; }
   function readNumber() {
@@ -1091,13 +1122,14 @@ function readLine(masks) {
     if (m === M.QUOTE_OPEN) {
       // foreign-language quotation: letters until the closing mark
       i++; out += '“';
-      let cap = false;
+      // cap: next letter is capital; capsWord: two capital signs make the whole word capital
+      let cap = false, capsWord = false;
       while (i < n && masks[i] !== M.QUOTE_CLOSE) {
         const c = masks[i];
-        if (c === M.SPACE) { out += ' '; cap = false; i++; continue; }
-        if (c === M.CAPITAL) { cap = true; i++; continue; }
+        if (c === M.SPACE) { out += ' '; cap = false; capsWord = false; i++; continue; }
+        if (c === M.CAPITAL) { if (cap) capsWord = true; cap = true; i++; continue; }
         if (c === M.NUM) { i++; out += readNumber(); continue; }
-        const l = letterAt(c, cap);
+        const l = letterAt(c, cap || capsWord);
         if (l) { out += l; cap = false; i++; continue; }
         const p = ENG_PUNCT.get(c);
         out += p || '◇'; i++;
@@ -1108,16 +1140,18 @@ function readLine(masks) {
     if (m === M.GAIJI && i + 1 < n && masks[i + 1] !== M.SPACE) {
       // foreign letters: until the next space
       i++;
-      let cap = false;
+      let cap = false, capsWord = false;
       while (i < n && masks[i] !== M.SPACE) {
         const c = masks[i];
-        if (c === M.CAPITAL) { cap = true; i++; continue; }
-        const l = letterAt(c, cap);
+        if (c === M.CAPITAL) { if (cap) capsWord = true; cap = true; i++; continue; }
+        const l = letterAt(c, cap || capsWord);
         out += l || ENG_PUNCT.get(c) || '◇'; cap = false; i++;
       }
       continue;
     }
     if (m === M.GAIJI) { out += '、'; i++; continue; }
+    // 第1カッコ (2356) opens and closes the same way
+    if (m === M.PAREN) { out += parenOpen ? ')' : '('; parenOpen = !parenOpen; i++; continue; }
     const next = i + 1 < n ? KANA.get(masks[i + 1]) : null;
     if (m === M.DAKU && next && DAKU[next]) { out += DAKU[next]; i += 2; continue; }
     if (m === M.HANDAKU && next && HANDAKU[next]) { out += HANDAKU[next]; i += 2; continue; }
