@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>点字ドットスキャナー / prototype v0.7.1</title>
+<title>点字ドットスキャナー / prototype v0.9</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -93,7 +93,7 @@
 <header>
   <div class="brand-row">
     <span class="brand">点字ドットスキャナー</span>
-    <span class="brand-sub">BRAILLE READER / prototype v0.7.1</span>
+    <span class="brand-sub">BRAILLE READER / prototype v0.9</span>
   </div>
   <div class="status-line" id="statusLine">写真を撮って、または選んで解析します</div>
 </header>
@@ -125,8 +125,9 @@
   <div class="panel" id="panel">
     <div class="panel-title">検出モード</div>
     <div class="toggle-row">
-      <button id="modeDark" class="active">暗い点を検出（影）</button>
-      <button id="modeBright">明るい点を検出（反射）</button>
+      <button id="modeAuto" class="active">自動</button>
+      <button id="modeDark">暗い点（影）</button>
+      <button id="modeBright">明るい点（反射）</button>
     </div>
 
     <div class="panel-title">写真の面</div>
@@ -173,7 +174,8 @@
   </div>
 
   <div class="notes">
-    <b>v0.7の変更点：</b>感度も自動で決めるようにしました。いくつかの感度を試して、点字らしい並び（決まった間隔で点が並ぶ）が一番多くなる感度を選びます。また、紙全体を撮ったときは紙の範囲を自動で見つけて、机や服などの模様を点と間違えないようにしました。紙の範囲の外は写真上で暗く表示します。うまくいかないときは「手動」に切り替えてください。<br><br>
+    <b>v0.9の変更点：</b>手すりや案内板の写真で試して直しました。数符の点が一部欠けても、続くマスが数字の形なら数字として読みます。行の端にある、ほかより明らかに弱い1点（傷や汚れ）を除きます。点字のすぐ上に印刷文字の一部があっても、点字の行が分かれないようにしました。点の多い行は、その行だけでマスの幅を決めます。<br><br>
+    <b>v0.8：</b>黒い案内板のように点字が光って写る写真に対応し、暗い点・明るい点、紙の範囲を使うかどうかを自動で選ぶようにしました。<br><br>
     <b>試作版です：</b>読み取りはまだ間違えることがあります。点訳の最終確認には使わないでください。読み間違いを見つけたら、写真と正しい読みを教えてもらえると改良に役立ちます。写真はスマホの中だけで処理し、どこにも送信しません。<br><br>
     仮名への変換は基本的な規則（清音・濁音・拗音・数符・外字符・外国語引用符）だけの<b>仮の読み</b>です。読めないマスは ◇ で表示します。点字の裏側（書く面）から撮った場合は「書く面（凹面）」に切り替えてください。
   </div>
@@ -216,14 +218,27 @@ function boxBlur(src, w, h, r) {
 
 // Response = how much darker (or brighter) a spot is than its surroundings, in percent.
 // Dividing by the local brightness makes dim areas as sensitive as bright ones.
-function computeResponse(gray, w, h, R, mode) {
+// A floor for the "surrounding brightness" used to turn differences into percentages.
+// On a dark sign the surroundings are nearly black, and dividing by that tiny number would
+// blow up faint surface texture into huge percentages; half the photo's median brightness
+// keeps dark areas as calm as bright ones.
+function brightnessFloor(gray) {
+  const step = Math.max(1, Math.floor(gray.length / 20000));
+  const s = [];
+  for (let i = 0; i < gray.length; i += step) s.push(gray[i]);
+  s.sort((a, b) => a - b);
+  return Math.max(20, s[s.length >> 1] * 0.5);
+}
+
+function computeResponse(gray, w, h, R, mode, floor) {
+  floor = floor || 20;
   const sr = Math.max(1, Math.round(R * 0.5));
   const small = boxBlur(boxBlur(gray, w, h, sr), w, h, sr);
   const bgR = Math.max(8, Math.round(R * 6));
   const bg = boxBlur(boxBlur(gray, w, h, bgR), w, h, bgR);
   const resp = new Float32Array(gray.length);
   for (let i = 0; i < resp.length; i++) {
-    const b = Math.max(bg[i], 20);
+    const b = Math.max(bg[i], floor);
     const d = mode === 'dark' ? (bg[i] - small[i]) : (small[i] - bg[i]);
     resp[i] = (d / b) * 100;
   }
@@ -232,6 +247,7 @@ function computeResponse(gray, w, h, R, mode) {
 
 // One detection per dot: keep only pixels that are the local peak, then drop
 // peaks on thin lines (handwriting, creases) by checking a ring around them.
+var STROKE_END = 0.7;
 function findPeaks(resp, w, h, R, sens) {
   const win = Math.max(2, Math.round(R * 1.1));
   // 8 directions; for each, sample points at growing distance from the peak.
@@ -271,7 +287,9 @@ function findPeaks(resp, w, h, R, sens) {
     if (!ok) continue;
     // A dot has a gap around it in every direction (even between neighbouring dots).
     // A pen stroke or crease stays dark continuously in two opposite directions.
+    // The end or corner of a printed letter stays bright/dark strongly in one direction.
     const solid = [];
+    let strongOneSide = false;
     for (const pts of dirs) {
       let mn = Infinity;
       for (const [ox, oy] of pts) {
@@ -280,7 +298,9 @@ function findPeaks(resp, w, h, R, sens) {
         if (r < mn) mn = r;
       }
       solid.push(mn > c.v * 0.5);
+      if (mn > c.v * STROKE_END) strongOneSide = true;
     }
+    if (strongOneSide) continue;
     let isLine = false;
     for (let k = 0; k < 8; k++) {
       if (solid[k] && (solid[(k + 3) % 8] || solid[(k + 4) % 8] || solid[(k + 5) % 8])) isLine = true;
@@ -290,10 +310,40 @@ function findPeaks(resp, w, h, R, sens) {
   }
   return { cands: cands.length, dots: kept };
 }
+// Peaks for one dot size. Large dots don't need full resolution, so the photo is first
+// shrunk (averaging f x f pixels) to keep the dot about 4-5 pixels across in radius;
+// this makes the big sizes several times faster with the same result.
+function shrinkGray(gray, w, h, f) {
+  const sw = Math.floor(w / f), sh = Math.floor(h / f);
+  const out = new Float32Array(sw * sh);
+  const inv = 1 / (f * f);
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    let s = 0;
+    for (let dy = 0; dy < f; dy++) {
+      const row = (y * f + dy) * w + x * f;
+      for (let dx = 0; dx < f; dx++) s += gray[row + dx];
+    }
+    out[y * sw + x] = s * inv;
+  }
+  return { gray: out, w: sw, h: sh };
+}
+function peaksAtSize(gray, w, h, R, mode, floor, minSens, shrinkCache) {
+  const f = Math.max(1, Math.min(4, Math.floor(R / 8)));
+  let src = { gray, w, h };
+  if (f > 1) {
+    if (shrinkCache && shrinkCache.has(f)) src = shrinkCache.get(f);
+    else { src = shrinkGray(gray, w, h, f); if (shrinkCache) shrinkCache.set(f, src); }
+  }
+  const r = R / f;
+  const resp = computeResponse(src.gray, src.w, src.h, r, mode, floor);
+  const dots = findPeaks(resp, src.w, src.h, r, minSens).dots;
+  if (f === 1) return dots;
+  return dots.map(d => ({ ...d, x: (d.x + 0.5) * f - 0.5, y: (d.y + 0.5) * f - 0.5 }));
+}
 // ==CORE_END==
 
 // ==AUTO_START==
-const AUTO_SCALES = [3, 3.6, 4.3, 5.2, 6.2, 7.5, 9, 11];
+const AUTO_SCALES = [3, 3.6, 4.3, 5.2, 6.2, 7.5, 9, 11, 13.5, 16.5];
 
 function nnDist(dots) {
   // nearest-neighbour distance for each dot (grid-accelerated)
@@ -480,47 +530,166 @@ function findPaper(gray, w, h) {
 // ==PAPER_END==
 
 // ==AUTOSENS_START==
-const SENS_CANDIDATES = [1.5, 2, 2.5, 3, 3.5, 4.5, 6];
+const SENS_CANDIDATES = [1.5, 2, 2.5, 3, 3.5, 4.5, 6, 8, 11, 15, 20, 30, 45];
 
-// How braille-like a set of dots is: dots that have a neighbour at the expected
-// dot spacing (about 3x the dot radius) count for, isolated or crowded dots count against.
-function brailleScore(dots) {
-  const cell = 40, grid = new Map(), key = (a, b) => a * 100003 + b;
+function dotGrid(dots, cell) {
+  const grid = new Map(), key = (a, b) => a * 100003 + b;
   for (const d of dots) {
     const k = key(Math.floor(d.x / cell), Math.floor(d.y / cell));
     if (!grid.has(k)) grid.set(k, []);
     grid.get(k).push(d);
   }
-  let good = 0, bad = 0;
+  return {
+    near(x, y, r) {
+      const out = [];
+      const gx = Math.floor(x / cell), gy = Math.floor(y / cell), reach = Math.ceil(r / cell);
+      for (let dx = -reach; dx <= reach; dx++) for (let dy = -reach; dy <= reach; dy++) {
+        const arr = grid.get(key(gx + dx, gy + dy));
+        if (arr) for (const o of arr) out.push(o);
+      }
+      return out;
+    }
+  };
+}
+
+// Typical dot spacing around each dot, measured from the dots themselves (the median of
+// the nearest-neighbour distances of nearby dots). Blurry photos make dots look large
+// compared with their spacing, so the spacing can't be guessed from the dot size.
+function measurePitch(dots, g) {
+  const nn = new Map();
   for (const d of dots) {
-    const pitch = d.R * 3;
-    let hasPitch = false, crowded = false;
-    const gx = Math.floor(d.x / cell), gy = Math.floor(d.y / cell);
-    const reach = Math.ceil(pitch * 1.4 / cell);
-    for (let dx = -reach; dx <= reach; dx++) for (let dy = -reach; dy <= reach; dy++) {
-      const arr = grid.get(key(gx + dx, gy + dy));
-      if (!arr) continue;
-      for (const o of arr) {
+    let best = Infinity;
+    let r = d.R * 4;
+    for (let tries = 0; tries < 3 && best === Infinity; tries++, r *= 2) {
+      for (const o of g.near(d.x, d.y, r)) {
         if (o === d) continue;
         const dist = Math.hypot(o.x - d.x, o.y - d.y);
-        if (dist < pitch * 0.6) crowded = true;
-        else if (dist <= pitch * 1.4) hasPitch = true;
+        if (dist < best) best = dist;
       }
     }
-    if (hasPitch && !crowded) good++; else bad++;
+    nn.set(d, best);
   }
-  return good - 4 * bad;
+  const pitch = new Map();
+  for (const d of dots) {
+    const near = g.near(d.x, d.y, d.R * 8)
+      .map(o => [Math.hypot(o.x - d.x, o.y - d.y), nn.get(o)])
+      .filter(e => isFinite(e[1]))
+      .sort((a, b) => a[0] - b[0]).slice(0, 9).map(e => e[1]).sort((a, b) => a - b);
+    pitch.set(d, near.length ? near[near.length >> 1] : d.R * 3);
+  }
+  return pitch;
+}
+
+// Remove long runs of evenly spaced marks in a straight line (grids, rulers, borders).
+// Braille never has more than 3 dots in a column, so 4+ evenly spaced marks stacked
+// vertically are not braille; horizontally a row of braille can repeat the cell pitch,
+// so only very long horizontal runs are removed.
+function removeLattice(dots) {
+  if (dots.length < 6) return dots;
+  const g = dotGrid(dots, 40);
+  const pm = measurePitch(dots, g);
+  const drop = new Set();
+  const dirs = [[1, 0], [0, 1]];
+  for (const d of dots) {
+    const pitch = pm.get(d);
+    for (const [ux, uy] of dirs) {
+      // nearest neighbour roughly in this direction (within about 12 degrees)
+      let best = null, bestDist = Infinity;
+      for (const o of g.near(d.x, d.y, pitch * 2)) {
+        if (o === d) continue;
+        const vx = o.x - d.x, vy = o.y - d.y;
+        const along = vx * ux + vy * uy;
+        if (along <= 0) continue;
+        const across = Math.abs(vx * uy - vy * ux);
+        if (across > along * 0.21) continue;
+        const dist = Math.hypot(vx, vy);
+        if (dist < bestDist && dist > pitch * 0.4) { bestDist = dist; best = o; }
+      }
+      if (!best) continue;
+      const sx = best.x - d.x, sy = best.y - d.y, step = Math.hypot(sx, sy);
+      // follow the chain in both directions while the steps stay equal
+      const chain = [d, best];
+      for (const sign of [1, -1]) {
+        let cur = sign === 1 ? best : d;
+        for (let n = 0; n < 40; n++) {
+          const ex = cur.x + sign * sx, ey = cur.y + sign * sy;
+          let hit = null;
+          for (const o of g.near(ex, ey, step * 0.2)) {
+            if (Math.hypot(o.x - ex, o.y - ey) < step * 0.12) { hit = o; break; }
+          }
+          if (!hit) break;
+          chain.push(hit);
+          cur = hit;
+        }
+      }
+      // Vertically braille never has 4 evenly spaced dots. Horizontally, steps of one dot
+      // spacing happen only inside a cell (2 dots), so 4+ such steps is a grid; steps of the
+      // cell pitch can repeat along a braille row, so only very long runs of those count.
+      const limit = ux === 1 ? (step < pitch * 1.5 ? 4 : 10) : 4;
+      if (chain.length >= limit) for (const c of chain) drop.add(c);
+    }
+  }
+  return drop.size ? dots.filter(d => !drop.has(d)) : dots;
+}
+
+// How braille-like a set of dots is. A dot counts for when it has a neighbour at the
+// typical local dot spacing lying along the rows or columns
+// (near horizontal or vertical); isolated, crowded or randomly placed dots count against.
+// Random texture has neighbours in every direction, so it scores about zero.
+function brailleScore(dots) {
+  const g = dotGrid(dots, 40);
+  const pm = measurePitch(dots, g);
+  const tan = Math.tan(12 * Math.PI / 180);
+  let good = 0, bad = 0;
+  for (const d of dots) {
+    const pitch = pm.get(d);
+    let aligned = false, crowded = false;
+    for (const o of g.near(d.x, d.y, pitch * 1.4)) {
+      if (o === d) continue;
+      const vx = Math.abs(o.x - d.x), vy = Math.abs(o.y - d.y);
+      const dist = Math.hypot(vx, vy);
+      if (dist < Math.max(pitch * 0.5, d.R * 0.9)) { crowded = true; continue; }
+      if (dist > pitch * 1.4) continue;
+      if (vy <= vx * tan || vx <= vy * tan) aligned = true;
+    }
+    if (aligned && !crowded) good++; else bad++;
+  }
+  return good - 1.5 * bad;
+}
+
+// Drop stray marks: dots with no dot right next to them and no other dot lying along a
+// row or column within a few dot spacings. Even a one-dot cell such as あ has dots of the neighbouring cells nearby
+// on the same line, so real braille is kept.
+function dropStrays(dots) {
+  if (dots.length < 3) return dots;
+  const g = dotGrid(dots, 40);
+  const pm = measurePitch(dots, g);
+  const tan = Math.tan(12 * Math.PI / 180);
+  return dots.filter(d => {
+    const p = pm.get(d), reach = p * 5;
+    for (const o of g.near(d.x, d.y, reach)) {
+      if (o === d) continue;
+      const vx = Math.abs(o.x - d.x), vy = Math.abs(o.y - d.y);
+      const dist = Math.hypot(vx, vy);
+      if (dist > reach) continue;
+      if (dist <= p * 1.6) return true; // part of the same cell, in any direction
+      if (vy <= vx * tan || vx <= vy * tan) return true;
+    }
+    return false;
+  });
 }
 
 // Try several sensitivities and keep the one whose dots look most like braille.
+// When several sensitivities score about the same, the lowest one is kept, since it
+// also catches faint dots.
 function chooseSensitivity(detectAt) {
-  let best = null;
-  for (const s of SENS_CANDIDATES) {
-    const dots = detectAt(s);
-    const score = brailleScore(dots);
-    if (!best || score > best.score) best = { s, dots, score };
-  }
-  return best;
+  const tried = SENS_CANDIDATES.map(s => {
+    const dots = dropStrays(removeLattice(detectAt(s)));
+    return { s, dots, score: brailleScore(dots) };
+  });
+  const top = Math.max(...tried.map(t => t.score));
+  const margin = Math.abs(top) * 0.05;
+  return tried.find(t => t.score >= top - margin);
 }
 // ==AUTOSENS_END==
 
@@ -645,7 +814,20 @@ function groupCells(dots, imgW, onBorder) {
   let cur = null;
   for (const r of rowObjs) {
     const dv = cur ? Math.min(cur.dv, r.dv) : r.dv;
-    if (cur && r.v - cur.top <= dv * 2.45 && r.v - cur.rows[cur.rows.length - 1].v <= dv * 1.6) {
+    // rows of one braille line are one or two dot spacings apart, never in between
+    const gap = cur ? (r.v - cur.rows[cur.rows.length - 1].v) / dv : 0;
+    // (a very small gap is the same row split by a slight tilt, so it belongs to the line too)
+    const gapOk = gap <= 1.32 || (gap >= 1.72 && gap <= 2.3);
+    // If this row is close below but the line would get too tall, and the line's top row is
+    // only a stray mark or two (e.g. a printed letter's tail just above the braille), drop
+    // that top row from the line instead of cutting the braille line apart.
+    while (cur && gapOk && r.v - cur.top > dv * 2.45 && cur.rows.length > 1 &&
+           cur.rows[0].pts.length <= 2 && cur.rows[0].pts.length * 3 <= r.pts.length) {
+      const stray = cur.rows.shift();
+      lines.splice(lines.indexOf(cur), 0, { top: stray.v, rows: [stray], d: stray.d, dv: stray.dv });
+      cur.top = cur.rows[0].v;
+    }
+    if (cur && r.v - cur.top <= dv * 2.45 && gapOk) {
       cur.rows.push(r);
       cur.d = median(cur.rows.flatMap(x => x.pts.map(q => q.d)));
       cur.dv = median(cur.rows.flatMap(x => x.pts.map(q => q.dv)));
@@ -742,7 +924,9 @@ function groupCells(dots, imgW, onBorder) {
     }
     return { phase: bp, cost: bc };
   }
-  const usable = lines.filter(L => L.cols.length >= 2);
+  // fit the pitch on lines with enough dots; stray marks forming tiny "lines" would mislead it
+  let usable = lines.filter(L => L.cols.length >= 3 && L.all.length >= 6);
+  if (!usable.length) usable = lines.filter(L => L.cols.length >= 2);
   let bestRatio = 2.6, bestTotal = Infinity;
   for (let ratio = 2.0; ratio <= 3.4; ratio += 0.02) {
     let tot = 0;
@@ -754,10 +938,20 @@ function groupCells(dots, imgW, onBorder) {
   for (const L of lines) {
     const nDots = L.rows.reduce((n, r) => n + r.pts.length, 0);
     if (nDots < 3) continue;
-    let P = L.dh * bestRatio, best = bestPhase(L, P);
+    // A line with plenty of dots fits its own cell pitch: other "lines" made of stray marks
+    // (grids, printed letters) can pull the page-wide value away from the real braille.
+    let lineRatio = bestRatio;
+    if (L.all.length >= 12 && L.cols.length >= 4) {
+      let bt = Infinity;
+      for (let ratio = 2.0; ratio <= 3.4; ratio += 0.02) {
+        const c = bestPhase(L, L.dh * ratio).cost;
+        if (c < bt - 1e-9) { bt = c; lineRatio = ratio; }
+      }
+    }
+    let P = L.dh * lineRatio, best = bestPhase(L, P);
     for (let f = 0.92; f <= 1.0801; f += 0.01) {
-      const cand = bestPhase(L, L.dh * bestRatio * f);
-      if (cand.cost < best.cost - 0.05) { best = cand; P = L.dh * bestRatio * f; }
+      const cand = bestPhase(L, L.dh * lineRatio * f);
+      if (cand.cost < best.cost - 0.05) { best = cand; P = L.dh * lineRatio * f; }
     }
     const phase = best.phase;
     const top = L.rows[0].v;
@@ -780,6 +974,19 @@ function groupCells(dots, imgW, onBorder) {
       let near = false;
       for (const k2 of cells.keys()) if (k2 !== k && Math.abs(k2 - k) <= 3) { near = true; break; }
       if (!near) cells.delete(k);
+    }
+    // a one-dot cell at either end of the line that is much fainter than the line's dots
+    // is usually a scratch or speck, not braille
+    {
+      const vs = [...cells.values()].flatMap(c => c.pts.map(p => p.v || 0)).sort((a, b) => a - b);
+      const medV = vs.length ? vs[vs.length >> 1] : 0;
+      for (let pass = 0; pass < 2 && cells.size > 2; pass++) {
+        const ks0 = [...cells.keys()];
+        for (const k of [Math.min(...ks0), Math.max(...ks0)]) {
+          const c = cells.get(k);
+          if (c && c.pts.length === 1 && medV > 0 && (c.pts[0].v || 0) < medV * 0.55) cells.delete(k);
+        }
+      }
     }
     if (!cells.size) continue;
     const ks = [...cells.keys()];
@@ -873,6 +1080,14 @@ function readLine(masks) {
       const l = LETTERS.get(masks[i + 1]);
       if (l && DIGIT_OF_LETTER[l] !== undefined) { i++; out += readNumber(); continue; }
     }
+    // The same for other partial number signs (part of 3456, two or more dots) that cannot
+    // start a word before a digit-shaped cell: 45 (拗濁音符), 46 (拗半濁音符), 456, 36 (つなぎ符).
+    // 346 ゆ, 345 よ and 34 や are real word starts, so they are left alone.
+    if (atWordStart && i + 1 < n && m > 0 && (m & ~M.NUM) === 0 && (m & (m - 1)) !== 0 &&
+        [dotsToMask('45'), dotsToMask('46'), dotsToMask('456'), dotsToMask('36')].includes(m)) {
+      const l = LETTERS.get(masks[i + 1]);
+      if (l && DIGIT_OF_LETTER[l] !== undefined) { i++; out += readNumber(); continue; }
+    }
     if (m === M.QUOTE_OPEN) {
       // foreign-language quotation: letters until the closing mark
       i++; out += '“';
@@ -928,7 +1143,7 @@ function readLine(masks) {
   const errorBox = $('errorBox'), statusLine = $('statusLine');
   const stage = $('stage'), photoCanvas = $('photoCanvas'), overlayCanvas = $('overlayCanvas'), countTag = $('countTag');
   const controlsRow = $('controlsRow'), detectBtn = $('detectBtn'), retakeBtn = $('retakeBtn'), panel = $('panel');
-  const modeDarkBtn = $('modeDark'), modeBrightBtn = $('modeBright');
+  const modeAutoBtn = $('modeAuto'), modeDarkBtn = $('modeDark'), modeBrightBtn = $('modeBright');
   const radiusSlider = $('radiusSlider'), sensSlider = $('sensSlider');
   const sizeAutoBtn = $('sizeAuto'), sizeManualBtn = $('sizeManual'), radiusField = $('radiusField');
   const radiusVal = $('radiusVal'), sensVal = $('sensVal');
@@ -954,7 +1169,7 @@ function readLine(masks) {
 
   const WORK_WIDTH = 1300;
   const MIN_SENS = 1;
-  let detectMode = 'dark';
+  let detectMode = 'auto';
   let autoSize = true;
   let autoSens = true;
   let img = null;
@@ -1001,10 +1216,12 @@ function readLine(masks) {
 
   function setMode(m) {
     detectMode = m;
+    modeAutoBtn.classList.toggle('active', m === 'auto');
     modeDarkBtn.classList.toggle('active', m === 'dark');
     modeBrightBtn.classList.toggle('active', m === 'bright');
     if (img) runDetection();
   }
+  modeAutoBtn.addEventListener('click', () => setMode('auto'));
   modeDarkBtn.addEventListener('click', () => setMode('dark'));
   modeBrightBtn.addEventListener('click', () => setMode('bright'));
 
@@ -1038,6 +1255,13 @@ function readLine(masks) {
     const data = cx.getImageData(0, 0, w, h).data;
     work = { w, h, gray: toGray(data, w * h), k: w / 900 };
     work.paper = findPaper(work.gray, w, h);
+    work.floor = brightnessFloor(work.gray);
+    // share of the photo that is quite dark: signs with raised dots on a dark plate
+    { const st = Math.max(1, Math.floor(w * h / 20000)), sm = [];
+      for (let i = 0; i < w * h; i += st) sm.push(work.gray[i]);
+      sm.sort((a, b) => a - b); work.p25 = sm[sm.length >> 2]; }
+    work.used = null;
+    work.shrunk = new Map();
     peakCache = new Map();
   }
 
@@ -1076,43 +1300,77 @@ function readLine(masks) {
 
   // Peaks for one dot size, found once at the lowest sensitivity and kept;
   // a higher sensitivity is then just a filter on the strength.
-  function peaksAt(R) {
-    const key = detectMode + '|' + R;
+  function peaksAt(mode, R) {
+    const key = mode + '|' + R;
     if (!peakCache.has(key)) {
-      const resp = computeResponse(work.gray, work.w, work.h, R, detectMode);
-      peakCache.set(key, findPeaks(resp, work.w, work.h, R, MIN_SENS).dots);
+      peakCache.set(key, peaksAtSize(work.gray, work.w, work.h, R, mode, work.floor, MIN_SENS, work.shrunk));
     }
     return peakCache.get(key);
   }
   const nextFrame = () => new Promise(r => setTimeout(r, 0));
+
+  // compute the missing sizes one by one so the screen can show progress
+  async function ensurePeaks(mode, scales, my, label) {
+    const missing = scales.filter(R => !peakCache.has(mode + '|' + R));
+    for (let i = 0; i < missing.length; i++) {
+      statusLine.textContent = label + ' ' + (i + 1) + ' / ' + missing.length;
+      await nextFrame();
+      if (my !== runId) return false;
+      peaksAt(mode, missing[i]);
+    }
+    return my === runId;
+  }
+
+  // Run detection for one mode (dark or bright), with and without the paper area,
+  // and return the best result. "strength" = braille-likeness x how clearly the dots stand out.
+  function evaluate(mode, scales) {
+    const options = work.paper ? [true, false] : [false];
+    const results = options.map(useMask => {
+      const paper = useMask ? work.paper : null;
+      const peaksFor = (R, s) => peaksAt(mode, R)
+        .filter(d => d.v >= s && (!paper || paper.inPaper(d.x, d.y)))
+        .map(d => ({ ...d, R }));
+      const detectAt = (s) => {
+        const found = autoSize ? autoDetect(work.w, work.h, scales, s, peaksFor).dots : peaksFor(scales[0], s);
+        // ignore marks right at the photo's edge (paper edge, vignetting)
+        return found.filter(d => d.x > d.R * 1.5 && d.y > d.R * 1.5 && d.x < work.w - d.R * 1.5 && d.y < work.h - d.R * 1.5);
+      };
+      let dots, s, score;
+      if (autoSens) { const best = chooseSensitivity(detectAt); dots = best.dots; s = best.s; score = best.score; }
+      else { s = parseFloat(sensSlider.value); dots = dropStrays(removeLattice(detectAt(s))); score = brailleScore(dots); }
+      const vs = dots.map(d => d.v).sort((a, b) => a - b);
+      const medV = vs.length ? vs[vs.length >> 1] : 0;
+      return { mode, useMask, dots, s, score, strength: Math.max(0, score + dots.length) * medV };
+    });
+    // leave the paper area out only when that is clearly better (e.g. a sign with no paper)
+    if (results.length === 2 && results[1].strength > results[0].strength * 1.3) return results[1];
+    return results[0];
+  }
 
   async function runDetection() {
     if (!img || !work) return;
     const my = ++runId;
     const t0 = performance.now();
     const scales = autoSize ? AUTO_SCALES.map(x => +(x * work.k).toFixed(2)) : [parseInt(radiusSlider.value, 10) * work.k];
-    // compute the missing sizes one by one so the screen can show progress
-    const missing = scales.filter(R => !peakCache.has(detectMode + '|' + R));
-    for (let i = 0; i < missing.length; i++) {
-      statusLine.textContent = '解析中… ' + (i + 1) + ' / ' + missing.length;
-      await nextFrame();
-      if (my !== runId) return;
-      peaksAt(missing[i]);
+    let res;
+    if (detectMode === 'auto') {
+      if (!(await ensurePeaks('dark', scales, my, '解析中…'))) return;
+      res = evaluate('dark', scales);
+      // raised dots on a dark plate shine instead of casting shadows: try bright dots too
+      // when much of the photo is dark, or when hardly any dark dots were found
+      if (work.p25 < 80 || res.dots.length < 30) {
+        if (!(await ensurePeaks('bright', scales, my, '明るい点も解析中…'))) return;
+        const r2 = evaluate('bright', scales);
+        if (r2.strength > res.strength * 1.2) res = r2;
+      }
+    } else {
+      if (!(await ensurePeaks(detectMode, scales, my, '解析中…'))) return;
+      res = evaluate(detectMode, scales);
     }
     if (my !== runId) return;
-    const paper = work.paper;
-    const peaksFor = (R, s) => peaksAt(R)
-      .filter(d => d.v >= s && (!paper || paper.inPaper(d.x, d.y)))
-      .map(d => ({ ...d, R }));
-    const detectAt = (s) => {
-      const found = autoSize ? autoDetect(work.w, work.h, scales, s, peaksFor).dots : peaksFor(scales[0], s);
-      // ignore marks right at the photo's edge (paper edge, vignetting)
-      return found.filter(d => d.x > d.R * 1.5 && d.y > d.R * 1.5 && d.x < work.w - d.R * 1.5 && d.y < work.h - d.R * 1.5);
-    };
-    let dots, usedSens;
-    if (autoSens) { const best = chooseSensitivity(detectAt); dots = best.dots; usedSens = best.s; }
-    else { usedSens = parseFloat(sensSlider.value); dots = detectAt(usedSens); }
-    const grouped = groupCells(dots, work.w, paper ? paper.onBorder : null);
+    work.used = res;
+    const dots = res.dots;
+    const grouped = groupCells(dots, work.w, res.useMask && work.paper ? work.paper.onBorder : null);
     drawOverlay(dots, grouped);
     renderResult(grouped);
     const t1 = performance.now();
@@ -1123,9 +1381,11 @@ function readLine(masks) {
     statCands.textContent = !rs.length ? '–' : (autoSize
       ? (rs[Math.floor(rs.length * 0.1)].toFixed(1) + '〜' + rs[Math.floor(rs.length * 0.9)].toFixed(1))
       : rs[0].toFixed(0));
-    statSens.textContent = usedSens.toFixed(1) + (autoSens ? ' 自動' : '');
+    statSens.textContent = res.s.toFixed(1) + (autoSens ? ' 自動' : '');
     const nCells = grouped.lines.reduce((n, L) => n + L.cells.filter(c => c.mask).length, 0);
-    statusLine.textContent = dots.length + ' 個の点 → ' + grouped.lines.length + ' 行・' + nCells + ' マス（' + ((t1 - t0) / 1000).toFixed(1) + '秒）';
+    const modeLabel = res.mode === 'bright' ? '明るい点' : '暗い点';
+    statusLine.textContent = dots.length + ' 個の点 → ' + grouped.lines.length + ' 行・' + nCells + ' マス（' + modeLabel
+      + (detectMode === 'auto' ? '・自動' : '') + '、' + ((t1 - t0) / 1000).toFixed(1) + '秒）';
   }
 
   function drawOverlay(dots, grouped) {
@@ -1133,7 +1393,7 @@ function readLine(masks) {
     octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     const k = photoCanvas.width / work.w;
     // dim everything outside the sheet of paper
-    const paper = work.paper;
+    const paper = work.used && work.used.useMask ? work.paper : null;
     if (paper) {
       // one path, filled once, so overlapping tile edges don't darken twice
       octx.fillStyle = 'rgba(0,0,0,0.45)';

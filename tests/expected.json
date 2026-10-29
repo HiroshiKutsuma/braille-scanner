@@ -1,0 +1,94 @@
+[
+ {
+  "file": "handrail_1.jpg",
+  "kind": "手すり・金属・光る点",
+  "lines": [
+   "1かい"
+  ]
+ },
+ {
+  "file": "handrail_2_blur.jpg",
+  "kind": "手すり・金属・光る点・手ぶれ",
+  "lines": [
+   "1かい"
+  ]
+ },
+ {
+  "file": "handrail_3.jpg",
+  "kind": "手すり・金属・光る点",
+  "lines": [
+   "1かい"
+  ]
+ },
+ {
+  "file": "label_cards_paper.jpg",
+  "kind": "作品ラベル・紙・凸面（行の頭が写真の端で切れている）",
+  "lines": [
+   "“Yui No. 1”",
+   "“Yui No. 2”"
+  ]
+ },
+ {
+  "file": "label_yui_no1.jpg",
+  "kind": "作品ラベル・白い板・透明の点",
+  "lines": [
+   "“Yui No. 1”",
+   "2026ねん",
+   "もーそーちく"
+  ]
+ },
+ {
+  "file": "map_elevator_blur.jpg",
+  "kind": "案内図・黒い板・光る点・手ぶれ",
+  "lines": [
+   "えれべーたー"
+  ]
+ },
+ {
+  "file": "map_entrance_hall.jpg",
+  "kind": "案内図・黒い板・光る点・格子",
+  "lines": [
+   "えんとらんす",
+   "ほーる"
+  ]
+ },
+ {
+  "file": "map_icons.jpg",
+  "kind": "案内図・黒い板・光る点・格子・アイコン",
+  "lines": [
+   "でんわ",
+   "こいん ろっかー",
+   "みずのみば"
+  ]
+ },
+ {
+  "file": "sign_aihara_gallery.jpg",
+  "kind": "案内板・黒い板・光る点・格子",
+  "lines": [
+   "あいはら きゅーいちろー きねんしつ"
+  ]
+ },
+ {
+  "file": "sign_art_information.jpg",
+  "kind": "案内板・黒い板・光る点・文字に重なる",
+  "lines": [
+   "びじゅつ じょーほー",
+   "こーなー"
+  ]
+ },
+ {
+  "file": "sign_public_gallery.jpg",
+  "kind": "案内板・黒い板・光る点",
+  "lines": [
+   "しみん ぎゃらりー"
+  ]
+ },
+ {
+  "file": "sign_touch_art_corner.jpg",
+  "kind": "案内板・黒い板・光る点・手ぶれ・文字に重なる",
+  "lines": [
+   "たっち あーと",
+   "こーなー"
+  ]
+ }
+]
