@@ -124,5 +124,48 @@
    "くすのき、 あくりる えのぐ、 とりょー",
    "2026ねん"
   ]
+ },
+ {
+  "file": "handrail_4.jpg",
+  "kind": "手すり・金属・光る点・暗い所",
+  "lines": [
+   "2かい"
+  ]
+ },
+ {
+  "file": "handrail_5.jpg",
+  "kind": "手すり・金属・光る点",
+  "lines": [
+   "2かい"
+  ]
+ },
+ {
+  "file": "sign_art_hall.jpg",
+  "kind": "案内板・黒い板・金属の粒",
+  "lines": [
+   "あーと ほーる"
+  ]
+ },
+ {
+  "file": "map_toilet.jpg",
+  "kind": "案内図・灰色の板・黒い粒・格子線",
+  "lines": [
+   "といれ あんないず"
+  ]
+ },
+ {
+  "file": "sign_meeting_room.jpg",
+  "kind": "案内板・黒い板・黒い粒・文字に重なる",
+  "lines": [
+   "かいぎしつ"
+  ]
+ },
+ {
+  "file": "map_elevator_here.jpg",
+  "kind": "案内図・黒い板・黒い粒・格子線・マークの下",
+  "lines": [
+   "えれべーたー",
+   "げんざい いち"
+  ]
  }
 ]
