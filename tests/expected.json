@@ -165,7 +165,94 @@
   "kind": "案内図・黒い板・黒い粒・格子線・マークの下",
   "lines": [
    "えれべーたー",
-   "げんざい いち"
+   "げんざいち"
+  ]
+ },
+ {
+  "file": "map_b1_here.jpg",
+  "kind": "案内図・黒い板・黒い粒・格子線",
+  "lines": [
+   "げんざいち"
+  ]
+ },
+ {
+  "file": "map_b1_toilet.jpg",
+  "kind": "案内図・黒い板・黒い粒・格子線・マークの下",
+  "lines": [
+   "といれ",
+   "あんないず",
+   "えれべーたー",
+   "げんざいち"
+  ]
+ },
+ {
+  "file": "sign_kikaku_tenjishitsu.jpg",
+  "kind": "案内板・黒い板・光る粒",
+  "lines": [
+   "きかく てんじしつ"
+  ]
+ },
+ {
+  "file": "handrail_b1_1_blur.jpg",
+  "kind": "手すり・金属・光る点・明暗の差",
+  "lines": [
+   "ちか 1かい"
+  ]
+ },
+ {
+  "file": "handrail_b1_2.jpg",
+  "kind": "手すり・金属・光る点",
+  "lines": [
+   "ちか 1かい"
+  ]
+ },
+ {
+  "file": "handrail_b1_rot_1.jpg",
+  "kind": "手すり・金属・横向きに撮影",
+  "lines": [
+   "ちか 1かいえ"
+  ]
+ },
+ {
+  "file": "handrail_b1_rot_2.jpg",
+  "kind": "手すり・金属・横向きに撮影",
+  "lines": [
+   "ちか 1かいえ"
+  ]
+ },
+ {
+  "file": "handrail_b1_rot_3.jpg",
+  "kind": "手すり・金属・横向きに撮影",
+  "lines": [
+   "ちか 1かいえ"
+  ]
+ },
+ {
+  "file": "handrail_b1_rot_4.jpg",
+  "kind": "手すり・金属・横向きに撮影",
+  "lines": [
+   "1かいえ"
+  ]
+ },
+ {
+  "file": "handrail_b1_rot_5_blur.jpg",
+  "kind": "手すり・金属・横向きに撮影・ぶれ",
+  "lines": [
+   "1かいえ"
+  ]
+ },
+ {
+  "file": "button_elevator_down_1.jpg",
+  "kind": "エレベーターのボタン・金属板・光る点",
+  "lines": [
+   "した"
+  ]
+ },
+ {
+  "file": "button_elevator_down_2.jpg",
+  "kind": "エレベーターのボタン・金属板・光る点",
+  "lines": [
+   "した"
   ]
  }
 ]
