@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>点字ドットスキャナー / prototype v0.12</title>
+<title>点字ドットスキャナー / prototype v0.13</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -93,7 +93,7 @@
 <header>
   <div class="brand-row">
     <span class="brand">点字ドットスキャナー</span>
-    <span class="brand-sub">BRAILLE READER / prototype v0.12</span>
+    <span class="brand-sub">BRAILLE READER / prototype v0.13</span>
   </div>
   <div class="status-line" id="statusLine">写真を撮って、または選んで解析します</div>
 </header>
@@ -174,6 +174,7 @@
   </div>
 
   <div class="notes">
+    <b>v0.13の変更点：</b>特殊音（てぃ・でぃ・ふぁ・とぅ・どぅ・ゔぁ・ぐぁ・しぇ・てゅ・ふゅ など）と、かぎ・かっこ類（第1カギ「」、第2カギ〈〉、二重カギ『』、第2カッコ［］、二重カッコ《》）を読めるようにしました。符号は点字ツールで、T・エディタの実物のファイルと照らして確かめたものです。<br><br>
     <b>v0.12の変更点：</b>スマホを横に構えて撮り、点字が写真の縦方向に写ったとき（縦の手すりなど）も、写真を回して読みます。金属の粒に照明が2か所映って1つの点が2つに見えるとき（エレベーターのボタンなど）は、1つの点にまとめます。<br><br>
     <b>v0.11の変更点：</b>案内板の大きな粒の点字に対応を広げました。粒は暗く写ったり、触られてすり減ったてっぺんが白く光ったりするので、明るさではなく「丸い形」でも点を探します。暗い板の写真では、そのぶん処理に数秒長くかかります。<br><br>
     <b>v0.10の変更点：</b>点訳原稿の紙全体を撮った写真で試して直しました。紙が少し反っていて行ごとに傾きが違っても、行ごとに傾きを測り直して読みます。二重大文字符（単語全体が大文字）と第1カッコに対応しました。<br><br>
@@ -1157,13 +1158,30 @@ const DIGIT_OF_LETTER = { a:'1',b:'2',c:'3',d:'4',e:'5',f:'6',g:'7',h:'8',i:'9',
 const ENG_PUNCT = new Map([[dotsToMask('256'), '.'], [dotsToMask('2'), ','], [dotsToMask('236'), '?'], [dotsToMask('235'), '!'], [dotsToMask('3'), "'"], [dotsToMask('36'), '-']]);
 
 const DAKU = { 'か':'が','き':'ぎ','く':'ぐ','け':'げ','こ':'ご','さ':'ざ','し':'じ','す':'ず','せ':'ぜ','そ':'ぞ',
-  'た':'だ','ち':'ぢ','つ':'づ','て':'で','と':'ど','は':'ば','ひ':'び','ふ':'ぶ','へ':'べ','ほ':'ぼ' };
+  'た':'だ','ち':'ぢ','つ':'づ','て':'で','と':'ど','は':'ば','ひ':'び','ふ':'ぶ','へ':'べ','ほ':'ぼ', 'う':'ゔ' };
 const HANDAKU = { 'は':'ぱ','ひ':'ぴ','ふ':'ぷ','へ':'ぺ','ほ':'ぽ' };
 const YOON_ROW = { 'か':'き','く':'き','こ':'き','さ':'し','す':'し','そ':'し','た':'ち','つ':'ち','と':'ち',
   'な':'に','ぬ':'に','の':'に','は':'ひ','ふ':'ひ','ほ':'ひ','ま':'み','む':'み','も':'み','ら':'り','る':'り','ろ':'り' };
 const YOON_VOWEL = { 'か':'ゃ','さ':'ゃ','た':'ゃ','な':'ゃ','は':'ゃ','ま':'ゃ','ら':'ゃ',
   'く':'ゅ','す':'ゅ','つ':'ゅ','ぬ':'ゅ','ふ':'ゅ','む':'ゅ','る':'ゅ',
   'こ':'ょ','そ':'ょ','と':'ょ','の':'ょ','ほ':'ょ','も':'ょ','ろ':'ょ' };
+
+// 特殊音: 前置きの記号 + 仮名（点字ツールで確かめた符号）
+const TOKU = {
+  [dotsToMask('4')]:  { 'ち':'てぃ','し':'すぃ','え':'いぇ','け':'きぇ','せ':'しぇ','て':'ちぇ','ね':'にぇ','へ':'ひぇ' },
+  [dotsToMask('45')]: { 'ち':'でぃ','し':'ずぃ','せ':'じぇ' },
+  [dotsToMask('26')]: { 'は':'ふぁ','ひ':'ふぃ','へ':'ふぇ','ほ':'ふぉ','か':'くぁ','き':'くぃ','け':'くぇ','こ':'くぉ',
+                        'た':'つぁ','ち':'つぃ','て':'つぇ','と':'つぉ','つ':'とぅ' },
+  [dotsToMask('256')]:{ 'は':'ゔぁ','ひ':'ゔぃ','へ':'ゔぇ','ほ':'ゔぉ','か':'ぐぁ','き':'ぐぃ','け':'ぐぇ','こ':'ぐぉ','つ':'どぅ' },
+  [dotsToMask('46')]: { 'つ':'てゅ','ゆ':'ふゅ' },
+};
+// かぎ・かっこ（2マスのもの）。[1マス目, 2マス目, 表示]
+const BRACKET2 = [
+  ['56', '3',    '〈'], ['6',    '23', '〉'],   // 第二カギ
+  ['56', '36',   '『'], ['36',   '23', '』'],   // 二重カギ
+  ['5',  '2356', '［'], ['2356', '2',  '］'],   // 第二カッコ
+  ['56', '2356', '《'], ['2356', '23', '》'],   // 二重カッコ
+].map(([a, b, t]) => [dotsToMask(a), dotsToMask(b), t]);
 
 const M = { SPACE: 0, DAKU: dotsToMask('5'), HANDAKU: dotsToMask('6'), YOON: dotsToMask('4'),
   YOON_DAKU: dotsToMask('45'), YOON_HANDAKU: dotsToMask('46'), NUM: dotsToMask('3456'),
@@ -1173,7 +1191,7 @@ const M = { SPACE: 0, DAKU: dotsToMask('5'), HANDAKU: dotsToMask('6'), YOON: dot
 // Rough reading of one braille line (a list of masks). Unknown cells become ◇.
 function readLine(masks) {
   let out = '';
-  let i = 0, parenOpen = false;
+  let i = 0, parenOpen = false, kagiOpen = false;
   const n = masks.length;
   function letterAt(m, cap) { const l = LETTERS.get(m); return l ? (cap ? l.toUpperCase() : l) : null; }
   function readNumber() {
@@ -1223,6 +1241,23 @@ function readLine(masks) {
       }
       if (i < n) { out += '”'; i++; }
       continue;
+    }
+    // かぎ・かっこ（2マス）。外字符（56）や第1カッコ（2356）より先に見る
+    if (i + 1 < n) {
+      const br = BRACKET2.find(([a, b]) => a === m && b === masks[i + 1]);
+      if (br) { out += br[2]; i += 2; continue; }
+    }
+    // 第1カギ「」（36）は開きと閉じが同じ。ごみの点と区別するため、
+    // 開きは語の頭で後ろにマスが続くとき、閉じは開いたあとで後ろが空白か行末のときだけ読む
+    if (m === M.TSUNAGI) {
+      const nextBlank = i + 1 >= n || masks[i + 1] === M.SPACE;
+      if (!kagiOpen && atWordStart && !nextBlank) { out += '「'; kagiOpen = true; i++; continue; }
+      if (kagiOpen && nextBlank) { out += '」'; kagiOpen = false; i++; continue; }
+    }
+    // 特殊音（てぃ・ふぁ・とぅ・ゔぁ など）
+    if (TOKU[m] && i + 1 < n) {
+      const k2 = KANA.get(masks[i + 1]);
+      if (k2 && TOKU[m][k2]) { out += TOKU[m][k2]; i += 2; continue; }
     }
     if (m === M.GAIJI && i + 1 < n && masks[i + 1] !== M.SPACE) {
       // foreign letters: until the next space
