@@ -254,5 +254,86 @@
   "lines": [
    "した"
   ]
+ },
+ {
+  "file": "button_toilet_panel_1.jpg",
+  "kind": "トイレの操作パネル・金属板・光る点",
+  "lines": [
+   "とまる おしり びで"
+  ]
+ },
+ {
+  "file": "button_toilet_panel_2.jpg",
+  "kind": "トイレの操作パネル・金属板・光る点・ぼけ",
+  "lines": [
+   "つよさ みずおと"
+  ]
+ },
+ {
+  "file": "button_toilet_flush.jpg",
+  "kind": "トイレの流すボタン・金属板・光る点",
+  "lines": [
+   "ながす"
+  ]
+ },
+ {
+  "file": "map_park_legend.jpg",
+  "kind": "公園の案内図・灰色の板・凡例・映り込み",
+  "lines": []
+ },
+ {
+  "file": "map_park_legend_2.jpg",
+  "kind": "公園の案内図・灰色の板・凡例・映り込み",
+  "lines": []
+ },
+ {
+  "file": "map_park_1.jpg",
+  "kind": "公園の案内図・緑の地図・格子状の点",
+  "lines": []
+ },
+ {
+  "file": "map_park_2.jpg",
+  "kind": "公園の案内図・緑の地図・格子状の点",
+  "lines": []
+ },
+ {
+  "file": "map_park_3.jpg",
+  "kind": "公園の案内図・緑の地図・格子状の点",
+  "lines": []
+ },
+ {
+  "file": "map_park_here.jpg",
+  "kind": "公園の案内図・現在地",
+  "lines": []
+ },
+ {
+  "file": "map_station_west_1.jpg",
+  "kind": "駅前の案内図・ベージュの板",
+  "lines": []
+ },
+ {
+  "file": "map_station_west_2.jpg",
+  "kind": "駅前の案内図・ベージュの板",
+  "lines": []
+ },
+ {
+  "file": "map_station_west_3.jpg",
+  "kind": "駅前の案内図・ベージュの板",
+  "lines": []
+ },
+ {
+  "file": "map_station_west_4.jpg",
+  "kind": "駅前の案内図・ベージュの板",
+  "lines": []
+ },
+ {
+  "file": "map_station_west_5.jpg",
+  "kind": "駅前の案内図・ベージュの板",
+  "lines": []
+ },
+ {
+  "file": "map_station_2f.jpg",
+  "kind": "駅2階広場の案内図・ベージュの板",
+  "lines": []
  }
 ]

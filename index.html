@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>点字ドットスキャナー / prototype v0.13</title>
+<title>点字ドットスキャナー / prototype v0.14</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -93,7 +93,7 @@
 <header>
   <div class="brand-row">
     <span class="brand">点字ドットスキャナー</span>
-    <span class="brand-sub">BRAILLE READER / prototype v0.13</span>
+    <span class="brand-sub">BRAILLE READER / prototype v0.14</span>
   </div>
   <div class="status-line" id="statusLine">写真を撮って、または選んで解析します</div>
 </header>
@@ -174,6 +174,7 @@
   </div>
 
   <div class="notes">
+    <b>v0.14の変更点：</b>トイレの操作パネルなど、点の少ない短い言葉で、マスの区切りを間違えにくくしました。点がまばらなとき（「な」のように真ん中の点がないマスなど）でも、点の間隔を正しく測ります。<br><br>
     <b>v0.13の変更点：</b>特殊音（てぃ・でぃ・ふぁ・とぅ・どぅ・ゔぁ・ぐぁ・しぇ・てゅ・ふゅ など）と、かぎ・かっこ類（第1カギ「」、第2カギ〈〉、二重カギ『』、第2カッコ［］、二重カッコ《》）を読めるようにしました。符号は点字ツールで、T・エディタの実物のファイルと照らして確かめたものです。<br><br>
     <b>v0.12の変更点：</b>スマホを横に構えて撮り、点字が写真の縦方向に写ったとき（縦の手すりなど）も、写真を回して読みます。金属の粒に照明が2か所映って1つの点が2つに見えるとき（エレベーターのボタンなど）は、1つの点にまとめます。<br><br>
     <b>v0.11の変更点：</b>案内板の大きな粒の点字に対応を広げました。粒は暗く写ったり、触られてすり減ったてっぺんが白く光ったりするので、明るさではなく「丸い形」でも点を探します。暗い板の写真では、そのぶん処理に数秒長くかかります。<br><br>
@@ -881,7 +882,18 @@ function groupCells(dots, imgW, onBorder) {
     });
     pts.forEach((q, i) => {
       const near = pts.map((o, j) => [Math.hypot(o.u - q.u, o.v - q.v), j]).sort((a, b) => a[0] - b[0]).slice(0, 13);
-      const gaps = near.map(e => vg[e[1]]).filter(g => isFinite(g) && g < q.d * 2.6);
+      let gaps = near.map(e => vg[e[1]]).filter(g => isFinite(g) && g > q.d * 0.45 && g < q.d * 2.6);
+      // A column with its middle dot missing (dots 1 and 3) spans two spacings. Pick the spacing
+      // that explains the most gaps as one spacing (or, counting half, as two), and halve the doubles.
+      if (gaps.length >= 3) {
+        let bu = 0, bs = -1;
+        for (const u of gaps) {
+          let sc = 0;
+          for (const g of gaps) { const r = g / u; if (r > 0.85 && r < 1.18) sc += 1; else if (r > 1.75 && r < 2.3) sc += 0.5; }
+          if (sc > bs + 1e-9) { bs = sc; bu = u; }
+        }
+        gaps = gaps.map(g => (g / bu > 1.75 && g / bu < 2.3 ? g / 2 : g));
+      }
       q.dv = gaps.length >= 3 ? median(gaps) : q.d;
     });
     return pts;
@@ -1002,17 +1014,20 @@ function groupCells(dots, imgW, onBorder) {
     L.cols = cols;
     const pairs = [];
     // inside a cell the two columns are about one dot spacing apart; the gap to the
-    // next cell is clearly wider, so only gaps near the dot spacing count here
+    // next cell is clearly wider, so only gaps near the dot spacing count here.
+    // With only a few dots, scattered far apart (a short word on a sign), the nearest-neighbour
+    // spacing comes out too large; the spacing between the rows of the line is then the better guide.
+    const dRef = isFinite(L.dv) && L.dv > L.d * 0.5 && L.dv < L.d * 0.85 ? L.dv : L.d;
     for (let i = 1; i < cols.length; i++) {
       const g = cols[i] - cols[i - 1];
-      if (g > L.d * 0.75 && g < L.d * 1.2) pairs.push(g);
+      if (g > dRef * 0.75 && g < dRef * 1.2) pairs.push(g);
     }
-    L.dh = pairs.length >= 2 ? median(pairs) : L.d;
+    L.dh = pairs.length >= 2 ? median(pairs) : dRef;
     // columns that clearly pair up with the next one: that pair is the left and right of one cell
     L.pairLeft = [];
     for (let i = 1; i < cols.length; i++) {
       const g = cols[i] - cols[i - 1];
-      if (Math.abs(g - L.dh) < L.d * 0.25) L.pairLeft.push(cols[i - 1]);
+      if (Math.abs(g - L.dh) < dRef * 0.25) L.pairLeft.push(cols[i - 1]);
     }
   }
 
