@@ -335,5 +335,30 @@
   "file": "map_station_2f.jpg",
   "kind": "駅2階広場の案内図・ベージュの板",
   "lines": []
+ },
+ {
+  "file": "button_toilet_panel_far.jpg",
+  "kind": "トイレの操作パネル・金属板・光る点・離れて撮影・文字と重なる",
+  "lines": [
+   "とまる おしり びで"
+  ]
+ },
+ {
+  "file": "button_elevator_call_1.jpg",
+  "kind": "エレベーターの呼びボタン・灰色の小さい板・光る点",
+  "lines": [
+   "うえ",
+   "した",
+   "1かい"
+  ]
+ },
+ {
+  "file": "button_elevator_call_2.jpg",
+  "kind": "エレベーターの呼びボタン・灰色の小さい板・光る点",
+  "lines": [
+   "うえ",
+   "した",
+   "1かい"
+  ]
  }
 ]
