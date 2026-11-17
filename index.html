@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>点字ドットスキャナー / prototype v0.14</title>
+<title>点字ドットスキャナー / prototype v0.15</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
@@ -49,6 +49,7 @@
   .stage.active { display: block; }
   canvas.photo { display: block; width: 100%; height: auto; }
   canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  canvas.overlay.selecting { pointer-events: auto; touch-action: none; cursor: crosshair; }
   .count-tag { position: absolute; top: 8px; right: 8px; font-family: var(--font-mono); font-size: 0.72rem; background: rgba(0,0,0,0.6); color: var(--marker); padding: 3px 9px; border-radius: 3px; }
 
   .controls-row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
@@ -93,7 +94,7 @@
 <header>
   <div class="brand-row">
     <span class="brand">点字ドットスキャナー</span>
-    <span class="brand-sub">BRAILLE READER / prototype v0.14</span>
+    <span class="brand-sub">BRAILLE READER / prototype v0.15</span>
   </div>
   <div class="status-line" id="statusLine">写真を撮って、または選んで解析します</div>
 </header>
@@ -120,6 +121,8 @@
   <div class="controls-row" id="controlsRow" style="display:none">
     <button class="primary" id="detectBtn">検出する</button>
     <button class="ghost" id="retakeBtn">撮り直す</button>
+    <button class="ghost" id="zoomBtn">範囲を囲んで拡大</button>
+    <button class="ghost" id="unzoomBtn" style="display:none">写真全体に戻す</button>
   </div>
 
   <div class="panel" id="panel">
@@ -174,6 +177,7 @@
   </div>
 
   <div class="notes">
+    <b>v0.15の変更点：</b>「範囲を囲んで拡大」ボタンを付けました。写真の中で点字が小さく写っているとき（エレベーターのボタンの横の小さな板など）は、ボタンを押してから、読みたい点字を指でなぞって四角く囲むと、その部分だけを拡大して読みます。「写真全体に戻す」で元に戻ります。<br><br>
     <b>v0.14の変更点：</b>トイレの操作パネルなど、点の少ない短い言葉で、マスの区切りを間違えにくくしました。点がまばらなとき（「な」のように真ん中の点がないマスなど）でも、点の間隔を正しく測ります。<br><br>
     <b>v0.13の変更点：</b>特殊音（てぃ・でぃ・ふぁ・とぅ・どぅ・ゔぁ・ぐぁ・しぇ・てゅ・ふゅ など）と、かぎ・かっこ類（第1カギ「」、第2カギ〈〉、二重カギ『』、第2カッコ［］、二重カッコ《》）を読めるようにしました。符号は点字ツールで、T・エディタの実物のファイルと照らして確かめたものです。<br><br>
     <b>v0.12の変更点：</b>スマホを横に構えて撮り、点字が写真の縦方向に写ったとき（縦の手すりなど）も、写真を回して読みます。金属の粒に照明が2か所映って1つの点が2つに見えるとき（エレベーターのボタンなど）は、1つの点にまとめます。<br><br>
@@ -1314,6 +1318,7 @@ function readLine(masks) {
   const errorBox = $('errorBox'), statusLine = $('statusLine');
   const stage = $('stage'), photoCanvas = $('photoCanvas'), overlayCanvas = $('overlayCanvas'), countTag = $('countTag');
   const controlsRow = $('controlsRow'), detectBtn = $('detectBtn'), retakeBtn = $('retakeBtn'), panel = $('panel');
+  const zoomBtn = $('zoomBtn'), unzoomBtn = $('unzoomBtn');
   const modeAutoBtn = $('modeAuto'), modeDarkBtn = $('modeDark'), modeBrightBtn = $('modeBright');
   const radiusSlider = $('radiusSlider'), sensSlider = $('sensSlider');
   const sizeAutoBtn = $('sizeAuto'), sizeManualBtn = $('sizeManual'), radiusField = $('radiusField');
@@ -1344,6 +1349,9 @@ function readLine(masks) {
   let autoSize = true;
   let autoSens = true;
   let img = null;
+  // the part of the photo being read, as fractions of the photo (null = the whole photo)
+  let region = null;
+  let selecting = false;
   let work = null;       // { w, h, gray, k }
   let peakCache = new Map(); // "mode|R" -> peaks found at the lowest sensitivity
   let timer = null;
@@ -1408,7 +1416,7 @@ function readLine(masks) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const image = new Image();
-      image.onload = () => { img = image; prepareImage(); showStage(); runDetection(); };
+      image.onload = () => { img = image; region = null; updateZoomButtons(); prepareImage(); showStage(); runDetection(); };
       image.onerror = () => showError('画像の読み込みに失敗しました。別の写真で試してください。');
       image.src = ev.target.result;
     };
@@ -1416,15 +1424,36 @@ function readLine(masks) {
     reader.readAsDataURL(file);
   }
 
+  // dot sizes to try (radius in work pixels)
+  function autoScales(wk) {
+    const list = AUTO_SCALES.map(x => x * wk.k);
+    if (wk.kz) for (const x of AUTO_SCALES) list.push(x * wk.kz);
+    list.sort((a, b) => a - b);
+    const out = [];
+    for (const r of list) if (!out.length || r > out[out.length - 1] * 1.12) out.push(+r.toFixed(2));
+    return out;
+  }
+  // the part of the photo to read, in the photo's pixels
+  function sourceRect() {
+    if (!region) return { sx: 0, sy: 0, sw: img.width, sh: img.height };
+    return { sx: region.x * img.width, sy: region.y * img.height, sw: region.w * img.width, sh: region.h * img.height };
+  }
+
   function prepareImage() {
-    const w = Math.min(WORK_WIDTH, img.width);
-    const h = Math.round(img.height * (w / img.width));
+    const { sx, sy, sw, sh } = sourceRect();
+    // A chosen part is enlarged a little when it is small, so its dots are big enough to find.
+    const w = Math.round(region ? Math.min(WORK_WIDTH, Math.max(sw, 700)) : Math.min(WORK_WIDTH, sw));
+    const h = Math.round(sh * (w / sw));
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const cx = c.getContext('2d', { willReadFrequently: true });
-    cx.drawImage(img, 0, 0, w, h);
+    cx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
     const data = cx.getImageData(0, 0, w, h).data;
     work = { w, h, gray: toGray(data, w * h), k: w / 900 };
+    // A chosen part is shown enlarged, so its dots are bigger than usual for the picture's width.
+    // How much bigger depends on how small the part was, so try both the usual sizes and the
+    // sizes the dots would have if they were of usual size in the whole photo.
+    if (region) work.kz = (w / sw) * img.width / 900;
     work.paper = findPaper(work.gray, w, h);
     work.floor = brightnessFloor(work.gray);
     // share of the photo that is quite dark: signs with raised dots on a dark plate
@@ -1442,20 +1471,103 @@ function readLine(masks) {
     panel.classList.add('active');
     result.classList.add('active');
     captureZone.style.display = 'none';
+    const { sx, sy, sw, sh } = sourceRect();
     const maxW = photoCanvas.parentElement.clientWidth || 600;
-    const scale = Math.min(1, maxW / img.width);
-    photoCanvas.width = Math.round(img.width * scale);
-    photoCanvas.height = Math.round(img.height * scale);
+    // the chosen part fills the width (zoomed in); the whole photo is never enlarged
+    const scale = region ? maxW / sw : Math.min(1, maxW / sw);
+    photoCanvas.width = Math.round(sw * scale);
+    photoCanvas.height = Math.round(sh * scale);
     overlayCanvas.width = photoCanvas.width;
     overlayCanvas.height = photoCanvas.height;
-    photoCanvas.getContext('2d').drawImage(img, 0, 0, photoCanvas.width, photoCanvas.height);
+    photoCanvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, photoCanvas.width, photoCanvas.height);
   }
+
+  // Zoom: draw a box around the braille with a finger; only that part is enlarged and read.
+  function updateZoomButtons() {
+    zoomBtn.textContent = selecting ? '囲むのをやめる' : (region ? 'さらに囲んで拡大' : '範囲を囲んで拡大');
+    unzoomBtn.style.display = region ? '' : 'none';
+    overlayCanvas.classList.toggle('selecting', selecting);
+  }
+  let dragStart = null, savedStatus = '';
+  function canvasPoint(e) {
+    const r = overlayCanvas.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
+    };
+  }
+  function drawSelection(a, b) {
+    const octx = overlayCanvas.getContext('2d');
+    const W = overlayCanvas.width, H = overlayCanvas.height;
+    octx.clearRect(0, 0, W, H);
+    octx.fillStyle = 'rgba(0,0,0,0.35)';
+    octx.fillRect(0, 0, W, H);
+    if (!a || !b) return;
+    const x = Math.min(a.x, b.x) * W, y = Math.min(a.y, b.y) * H, w = Math.abs(a.x - b.x) * W, h = Math.abs(a.y - b.y) * H;
+    octx.clearRect(x, y, w, h);
+    octx.lineWidth = 2; octx.setLineDash([8, 6]); octx.strokeStyle = '#ffb454';
+    octx.strokeRect(x, y, w, h);
+    octx.setLineDash([]);
+  }
+  // choose a part of what is shown now (fractions of the view) and read it
+  function zoomTo(a, b) {
+    const fx = Math.min(a.x, b.x), fy = Math.min(a.y, b.y), fw = Math.abs(a.x - b.x), fh = Math.abs(a.y - b.y);
+    const cur = region || { x: 0, y: 0, w: 1, h: 1 };
+    region = { x: cur.x + fx * cur.w, y: cur.y + fy * cur.h, w: fw * cur.w, h: fh * cur.h };
+    selecting = false;
+    updateZoomButtons();
+    prepareImage(); showStage(); runDetection();
+  }
+  zoomBtn.addEventListener('click', () => {
+    if (!img) return;
+    selecting = !selecting;
+    updateZoomButtons();
+    if (selecting) {
+      savedStatus = statusLine.textContent;
+      statusLine.textContent = '読みたい点字を、写真の上で指でなぞって四角く囲んでください';
+      drawSelection(null, null);
+    } else {
+      statusLine.textContent = savedStatus;
+      if (work && work.used) runDetection();
+    }
+  });
+  unzoomBtn.addEventListener('click', () => {
+    if (!img) return;
+    region = null; selecting = false;
+    updateZoomButtons();
+    prepareImage(); showStage(); runDetection();
+  });
+  overlayCanvas.addEventListener('pointerdown', (e) => {
+    if (!selecting) return;
+    e.preventDefault();
+    overlayCanvas.setPointerCapture(e.pointerId);
+    dragStart = canvasPoint(e);
+    drawSelection(dragStart, dragStart);
+  });
+  overlayCanvas.addEventListener('pointermove', (e) => {
+    if (!selecting || !dragStart) return;
+    e.preventDefault();
+    drawSelection(dragStart, canvasPoint(e));
+  });
+  overlayCanvas.addEventListener('pointerup', (e) => {
+    if (!selecting || !dragStart) return;
+    const a = dragStart, b = canvasPoint(e);
+    dragStart = null;
+    const r = overlayCanvas.getBoundingClientRect();
+    // too small a box is taken as a slip of the finger
+    if (Math.abs(a.x - b.x) * r.width < 24 || Math.abs(a.y - b.y) * r.height < 24) { drawSelection(null, null); return; }
+    zoomTo(a, b);
+  });
+  overlayCanvas.addEventListener('pointercancel', () => { dragStart = null; });
+  // for testing: read a part given as fractions of the whole photo
+  window.__readRegion = (x, y, w, h) => { region = { x, y, w, h }; selecting = false; updateZoomButtons(); prepareImage(); showStage(); runDetection(); };
 
   detectBtn.addEventListener('click', () => { if (img) runDetection(); });
   retakeBtn.addEventListener('click', resetAll);
 
   function resetAll() {
     img = null; work = null; peakCache = new Map(); runId++;
+    region = null; selecting = false; updateZoomButtons();
     stage.classList.remove('active');
     controlsRow.style.display = 'none';
     panel.classList.remove('active');
@@ -1579,7 +1691,7 @@ function readLine(masks) {
     }
     const t = base.turned;
     work = t; peakCache = t.cache;
-    const scales = AUTO_SCALES.map(x => +(x * base.k).toFixed(2));
+    const scales = autoScales(base);
     let res;
     try { res = await detectWith(scales, my); } finally { work = base; peakCache = baseCache; }
     if (!res) return my === runId ? false : null;
@@ -1604,15 +1716,34 @@ function readLine(masks) {
 
   async function runDetection() {
     if (!img || !work) return;
+    if (selecting) { selecting = false; updateZoomButtons(); }
     const my = ++runId;
     const t0 = performance.now();
-    const scales = autoSize ? AUTO_SCALES.map(x => +(x * work.k).toFixed(2)) : [parseInt(radiusSlider.value, 10) * work.k];
+    const scales = autoSize ? autoScales(work) : [parseInt(radiusSlider.value, 10) * work.k];
     let res = await detectWith(scales, my);
     if (!res) return;
     if (my !== runId) return;
     work.used = res;
     let dots = res.dots = mergeTwins(res.dots);
     let grouped = groupCells(dots, work.w, res.useMask && work.paper ? work.paper.onBorder : null);
+    // A chosen part holds only a few dots, too few to judge the dot size from their spacing.
+    // The part is small, so simply try each size, dark and bright, and keep the best reading.
+    if (region && detectMode === 'auto' && autoSize) {
+      // how good a reading is: dots lined up like braille, and readable characters
+      const quality = (r, g) => r.score + readQuality(g) * 0.5;
+      let bestQ = quality(res, grouped);
+      for (const mode of ['dark', 'bright']) {
+        for (const R of scales) {
+          if (!(await ensurePeaks(mode, [R], my, '大きさを試しています…'))) return;
+          const r = evaluate(mode, [R]);
+          r.dots = mergeTwins(r.dots);
+          const g = groupCells(r.dots, work.w, r.useMask && work.paper ? work.paper.onBorder : null);
+          const q = quality(r, g);
+          if (q > bestQ) { bestQ = q; res = r; dots = r.dots; grouped = g; }
+        }
+      }
+      work.used = res;
+    }
     // Braille photographed sideways (a handrail running up and down the photo): also read the
     // photo turned a quarter turn, both ways, and keep whichever reads clearly better.
     if (detectMode === 'auto' && autoSize && looksSideways(dots)) {

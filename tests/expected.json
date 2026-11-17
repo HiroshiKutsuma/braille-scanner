@@ -360,5 +360,83 @@
    "した",
    "1かい"
   ]
+ },
+ {
+  "file": "button_elevator_call_1.jpg",
+  "kind": "エレベーターの呼びボタン・範囲を囲んで拡大",
+  "region": [
+   0.32,
+   0.13,
+   0.18,
+   0.07
+  ],
+  "lines": [
+   "うえ"
+  ]
+ },
+ {
+  "file": "button_elevator_call_1.jpg",
+  "kind": "エレベーターの呼びボタン・範囲を囲んで拡大",
+  "region": [
+   0.34,
+   0.5,
+   0.15,
+   0.06
+  ],
+  "lines": [
+   "した"
+  ]
+ },
+ {
+  "file": "button_elevator_call_1.jpg",
+  "kind": "エレベーターの呼びボタン・範囲を囲んで拡大",
+  "region": [
+   0.38,
+   0.77,
+   0.47,
+   0.04
+  ],
+  "lines": [
+   "1かい"
+  ]
+ },
+ {
+  "file": "button_elevator_call_2.jpg",
+  "kind": "エレベーターの呼びボタン・範囲を囲んで拡大",
+  "region": [
+   0.12,
+   0.14,
+   0.24,
+   0.08
+  ],
+  "lines": [
+   "うえ"
+  ]
+ },
+ {
+  "file": "button_elevator_call_2.jpg",
+  "kind": "エレベーターの呼びボタン・範囲を囲んで拡大",
+  "region": [
+   0.14,
+   0.5,
+   0.17,
+   0.07
+  ],
+  "lines": [
+   "した"
+  ]
+ },
+ {
+  "file": "button_elevator_call_2.jpg",
+  "kind": "エレベーターの呼びボタン・範囲を囲んで拡大",
+  "region": [
+   0.2,
+   0.78,
+   0.5,
+   0.05
+  ],
+  "lines": [
+   "1かい"
+  ]
  }
 ]
